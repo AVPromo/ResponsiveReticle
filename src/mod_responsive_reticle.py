@@ -6,8 +6,12 @@ import BattleReplay
 import BigWorld
 import constants
 from Avatar import PlayerAvatar
-from AvatarInputHandler.gun_marker_ctrl import _GunMarkerController
+from AvatarInputHandler import aih_global_binding, _BINDING_ID
+from AvatarInputHandler.gun_marker_ctrl import _GunMarkerController, _CrosshairShotResults
 from VehicleGunRotator import VehicleGunRotator
+from aih_constants import SHOT_RESULT, GUN_MARKER_TYPE
+from debug_utils import LOG_WARNING
+from gui.Scaleform.daapi.view.battle.shared.crosshair.plugins import ShotResultIndicatorPlugin
 from gun_rotation_shared import calcPitchLimitsFromDesc
 from items.vehicles import VehicleDescriptor
 from projectile_trajectory import getShotAngles
@@ -25,7 +29,7 @@ def isClientWG():
     return not isClientLesta()
 
 
-def overrideIn(cls, condition=lambda: True):
+def overrideIn(cls, classMethod=False, staticMethod=False, condition=lambda: True):
 
     def _overrideMethod(func):
         if not condition():
@@ -38,8 +42,22 @@ def overrideIn(cls, condition=lambda: True):
 
         old = getattr(cls, funcName)
 
-        def wrapper(*args, **kwargs):
-            return func(old, *args, **kwargs)
+        if staticMethod or classMethod:
+            old = getattr(cls, funcName).__func__
+        else:
+            old = getattr(cls, funcName)
+
+        if classMethod:
+            @classmethod
+            def wrapper(clss, *args, **kwargs):
+                return func(old, clss, *args, **kwargs)
+        elif staticMethod:
+            @staticmethod
+            def wrapper(*args, **kwargs):
+                return func(old, *args, **kwargs)
+        else:
+            def wrapper(*args, **kwargs):
+                return func(old, *args, **kwargs)
 
         setattr(cls, funcName, wrapper)
         return wrapper
@@ -368,3 +386,92 @@ else:
 
         dataProviderSizeCache[selfId] = BigWorld.time()
         func(self, currentSize, constants.SERVER_TICK_LENGTH)
+
+
+class _ShotResultCache(object):
+    clientState = aih_global_binding.bindRW(_BINDING_ID.CLIENT_GUN_MARKER_STATE)
+
+    def __init__(self):
+        self.lastShotResult = SHOT_RESULT.UNDEFINED  # type: SHOT_RESULT
+        self.lastShotResultTime = BigWorld.time()  # type: float
+
+
+g_shotResultCache = _ShotResultCache()
+
+
+# last WoT update 2.3.1.0 did something to BigWorld.CollisionComponent such that other mods calling it
+# more frequently (more calls *in the same game tick*) for some reason caused fps drops when aiming at tanks
+# even through that measurements of calls to it showed
+# that those calls didn't take significant time that could explain that
+#
+# because responsive reticle boost tick rate, this also inherently increases calls to that component
+# however - responsive reticle does it over time (one call per tick, but ticks are much more frequent)
+# it's not instantaneous like other mods did (where they called it 2-7 times inside the same tick)
+#
+# responsive reticle didn't suffer from this mysterious fps drop
+# but let's just make sure we're calling it around the same amount of time like vanilla game does (once every 100 ms)
+#
+# this will inherently slightly slow down reticle penetration indicator responsiveness, but it not noticeable
+
+@overrideIn(ShotResultIndicatorPlugin, condition=isClientWG)
+def __onGunMarkerStateChanged(func, self, markerType, gunMarkerState, supportMarkersInfo):
+    # handle shot result caching only for client reticle
+    #
+    # I'd like to cache it on getShotResult class method side, but we unfortunately don't have markerType there
+    # also because lesta doesn't store gun marker state in some object (like WG did)
+    # and I don't want to make 2 different code handling for them
+    # then I cannot compare them by reference by the same code
+    #
+    # so, we have to compare them somewhere upper in call stack where method signature is kinda the same
+    # and this is best place to do so
+    if markerType != GUN_MARKER_TYPE.CLIENT or not shouldBoostTickRate():
+        return func(self, markerType, gunMarkerState, supportMarkersInfo)
+
+    if not self._ShotResultIndicatorPlugin__isEnabled:
+        return
+
+    shotResult = wg_getShotResultByCacheLookup(self, gunMarkerState, supportMarkersInfo)
+    if self._ShotResultIndicatorPlugin__cache[markerType] == shotResult:
+        return
+    if self._parentObj.setGunMarkerColor(markerType, self._ShotResultIndicatorPlugin__colors[shotResult]):
+        self._ShotResultIndicatorPlugin__cache[markerType] = shotResult
+
+
+def wg_getShotResultByCacheLookup(self, gunMarkerState, supportMarkersInfo):
+    time = BigWorld.time()
+    if time - g_shotResultCache.lastShotResultTime < constants.SERVER_TICK_LENGTH:
+        return g_shotResultCache.lastShotResult
+
+    g_shotResultCache.lastShotResult = self._getShotResult(gunMarkerState, supportMarkersInfo)
+    g_shotResultCache.lastShotResultTime = time
+
+    return g_shotResultCache.lastShotResult
+
+
+@overrideIn(ShotResultIndicatorPlugin, condition=isClientLesta)
+def __updateColor(func, self, markerType, position, collision, direction):
+    if markerType != GUN_MARKER_TYPE.CLIENT or not shouldBoostTickRate():
+        return func(self, markerType, position, collision, direction)
+
+    result = lesta_getShotResultByCacheLookup(self, position, collision, direction)
+    if result in self._ShotResultIndicatorPlugin__colors:
+        color = self._ShotResultIndicatorPlugin__colors[result]
+        if self._ShotResultIndicatorPlugin__cache[markerType] != result and self._parentObj.setGunMarkerColor(markerType, color):
+            self._ShotResultIndicatorPlugin__cache[markerType] = result
+    else:
+        LOG_WARNING('Color is not found by shot result', result)
+
+
+def lesta_getShotResultByCacheLookup(self, position, collision, direction):
+    time = BigWorld.time()
+    if time - g_shotResultCache.lastShotResultTime < constants.SERVER_TICK_LENGTH:
+        return g_shotResultCache.lastShotResult
+
+    g_shotResultCache.lastShotResult = self._ShotResultIndicatorPlugin__shotResultResolver.getShotResult(
+        position, collision, direction,
+        excludeTeam=self._ShotResultIndicatorPlugin__playerTeam,
+        piercingMultiplier=self._ShotResultIndicatorPlugin__piercingMultiplier
+    )
+    g_shotResultCache.lastShotResultTime = time
+
+    return g_shotResultCache.lastShotResult
