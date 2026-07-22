@@ -1,0 +1,2 @@
+import responsive_reticle.hooks.avatar_hooks
+import responsive_reticle.hooks.vehicle_gun_rotator_hooks
