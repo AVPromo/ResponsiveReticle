@@ -446,7 +446,11 @@ def __updateGunMarker(self, forceRelaxTime=None):
     if vehicle is None:
         return
 
-    gunMarker = self._avatar.inputHandler.ctrl._gunMarker
+    ctrl = self._avatar.inputHandler.ctrl
+    if not hasattr(ctrl, "_gunMarker"):
+        return old_VGR_updateGunMarker(self, forceRelaxTime)
+
+    gunMarker = ctrl._gunMarker
 
     # for a cache missed frame (every 100 ms) update gun marker the normal way
     # this triggers all crucial vanilla logic of updating reticle size, replays handling, all other event, etc
