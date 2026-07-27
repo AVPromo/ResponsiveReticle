@@ -1,6 +1,7 @@
 from typing import Optional
 
 import BigWorld
+from Avatar import PlayerAvatar
 from items.vehicles import VehicleDescriptor
 
 
@@ -16,11 +17,14 @@ class ShouldBoostTickRateHelper(object):
     #
     # just to be sure, when this is called multiple times (and it can with some mods), just cache it at VGR.__onTick
     def shouldBoostTickRate(self):
-        # we don't want to change SPGs gun tick rate because it breaks top-down view reticle dots
-        # and this mod is not useful for SPGs, so it's not an issue
-        #
-        # performance note: avoid BigWorld.entity(id).vehicle.typeDescriptor
-        vehicleDescriptor = BigWorld.player().getVehicleDescriptor()  # type: VehicleDescriptor
+        player = BigWorld.player()  # type: PlayerAvatar
+
+        # we don't want to boost tick-rate, when current input controller
+        # doesn't have gun marker that we want to increase responsiveness of
+        if not hasattr(player.inputHandler.ctrl, "_gunMarker"):
+            return False
+
+        vehicleDescriptor = player.getVehicleDescriptor()  # type: VehicleDescriptor
         if vehicleDescriptor is None:
             return False
 
@@ -30,6 +34,8 @@ class ShouldBoostTickRateHelper(object):
 
         self.lastCheckedPlayerVehicleDescriptor = vehicleDescriptor
 
+        # we don't want to change SPGs gun tick rate because it breaks top-down view reticle dots
+        # and this mod is not useful for SPGs, so it's not an issue
         if 'SPG' in vehicleDescriptor.type.tags:
             self.lastIsPlayerVehicleValid = False
             return False
