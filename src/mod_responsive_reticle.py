@@ -47,14 +47,14 @@
 # Current results (on my machine, approximations, with cache hits between 100 ms updates that we implemented)
 # - VGR AT tick:
 #    - vanilla: 450 us (580 us with full profiler)
-#    - modded:  210 us (250 us with full profiler)
-#    - so on average 53% (57% with profiler) shorter than vanilla
-#    - that's over 200% times faster code!
+#    - modded:  235 us (284 us with full profiler)
+#    - so on average 52%  shorter than vanilla
+#    - that's over 2 times faster code!
 # - VGR AE tick (with armor flashlight enabled):
 #    - vanilla: 730 us (905 us with full profiler), randomly jumping to even (1100 us; 1700 us)
-#    - modded:  250 us (320 us with full profiler), no random jumps in between main ticks
-#    - so on average 65% (65% with full profiler) shorter than vanilla
-#    - that's almost 300% faster code!
+#    - modded:  270 us (340 us with full profiler), no random jumps in between main ticks
+#    - so on average 63% shorter than vanilla
+#    - that's almost 3 times faster code!
 #
 # So this would, on our example 200 FPS machine, reduce average mod overhead
 # by going from roughly around 170 FPS to about 190 FPS - this is impressive result.

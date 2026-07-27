@@ -1,6 +1,7 @@
 from math import pi
 from typing import Optional
 
+import BattleReplay
 import BigWorld
 import Math
 import constants
@@ -8,7 +9,7 @@ from Avatar import PlayerAvatar
 from AvatarInputHandler import AimingSystems
 from VehicleGunRotator import VehicleGunRotator
 from aih_constants import GUN_MARKER_TYPE
-from gun_rotation_shared import calcPitchLimitsFromDesc
+from gun_rotation_shared import calcPitchLimitsFromDesc, calcGunPitchCorrection
 from projectile_trajectory import getShotAngles
 
 from responsive_reticle.helpers.one_tick_cache import g_oneTickCache, old_VGR_getAvatarOwnVehicleStabilisedMatrix
@@ -81,7 +82,7 @@ def __onTick(self):
 # performance note
 #
 # this method takes around 230 us on my machine and does the main rotation math
-# with modded logic - around 50 us - very nice!
+# with modded logic - around 75 us - very nice!
 #
 # also WG and Lesta specific
 # slightly different method body
@@ -228,8 +229,8 @@ def __init__(self, *args, **kwargs):
                                                  lastTurretYaw=self.turretYaw,
                                                  dispersionAngles=self._VehicleGunRotator__dispersionAngles)
 
-    self._mod_lastTurretYawMatrixTime = 0.0
-    self._mod_lastTurretPitchMatrixTime = 0.0
+    self._mod_lastTurretYawReplayTime = 0.0
+    self._mod_lastTurretPitchReplayTime = 0.0
 
     self._mod_last_syncWithServerTurretYaw_time = 0.0
 
@@ -280,39 +281,65 @@ def getOwnVehicleShotDispersionAngleForGunRotator(self):
     return dispersionAngles
 
 
-old_VGR_updateTurretMatrix = VehicleGunRotator._VehicleGunRotator__updateTurretMatrix
-
-
-# performance note
-# this saves us 20 us on average, because it is not needed to be updated so often
-
 @overrideIn(VehicleGunRotator)
 def __updateTurretMatrix(self, yaw, time):
-    bwTime = BigWorld.time()
-    timeDiff = bwTime - self._mod_lastTurretYawMatrixTime
-    if timeDiff < constants.SERVER_TICK_LENGTH:
+    if not self._VehicleGunRotator__isStarted:
         return
+    else:
+        replayYaw = yaw
+        staticTurretYaw = self._VehicleGunRotator__getTurretStaticYaw()
+        if staticTurretYaw is not None:
+            yaw = staticTurretYaw
+        m = Math.Matrix()
+        m.setRotateY(yaw)
+        self._VehicleGunRotator__turretMatrixAnimator.update(m, 0.0)
 
-    self._mod_lastTurretYawMatrixTime = bwTime
-    old_VGR_updateTurretMatrix(self, yaw, timeDiff)
+        # performance note
+        #
+        # this saves us around 10 us on average
+        bwTime = BigWorld.time()
+        timeDiff = bwTime - self._mod_lastTurretYawReplayTime
+        if timeDiff < constants.SERVER_TICK_LENGTH:
+            return
+
+        self._mod_lastTurretYawReplayTime = bwTime
+
+        replayCtrl = BattleReplay.g_replayCtrl
+        if replayCtrl.isRecording:
+            replayCtrl.setTurretYaw(replayYaw)
 
 
 old_VGR_updateGunMatrix = VehicleGunRotator._VehicleGunRotator__updateGunMatrix
 
 
-# performance note
-#
-# this saves us 20 us on average, because it is not needed to be updated so often
-
 @overrideIn(VehicleGunRotator)
 def __updateGunMatrix(self, pitch, time):
-    bwTime = BigWorld.time()
-    timeDiff = bwTime - self._mod_lastTurretPitchMatrixTime
-    if timeDiff < constants.SERVER_TICK_LENGTH:
+    if not self._VehicleGunRotator__isStarted:
         return
+    else:
+        replayPitch = pitch
+        descr = self._avatar.getVehicleDescriptor()
+        pitch -= calcGunPitchCorrection(self._VehicleGunRotator__turretYaw, descr.hull.turretPitches[0], descr.turret.gunJointPitch)
+        staticPitch = self._VehicleGunRotator__getGunStaticPitch()
+        if staticPitch is not None:
+            pitch = staticPitch
+        m = Math.Matrix()
+        m.setRotateX(pitch)
+        self._VehicleGunRotator__gunMatrixAnimator.update(m, 0.0)
 
-    self._mod_lastTurretPitchMatrixTime = bwTime
-    old_VGR_updateGunMatrix(self, pitch, timeDiff)
+        # performance note
+        #
+        # this saves us around 10 us on average
+        bwTime = BigWorld.time()
+        timeDiff = bwTime - self._mod_lastTurretPitchReplayTime
+        if timeDiff < constants.SERVER_TICK_LENGTH:
+            return
+
+        self._mod_lastTurretPitchReplayTime = bwTime
+
+        replayCtrl = BattleReplay.g_replayCtrl
+        if replayCtrl.isRecording:
+            replayCtrl.setGunPitch(replayPitch)
 
 
 old_VGR_syncWithServerTurretYaw = VehicleGunRotator._VehicleGunRotator__syncWithServerTurretYaw
