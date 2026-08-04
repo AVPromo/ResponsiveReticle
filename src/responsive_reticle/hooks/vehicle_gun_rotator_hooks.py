@@ -281,8 +281,14 @@ def getOwnVehicleShotDispersionAngleForGunRotator(self):
     return dispersionAngles
 
 
+old_VGR_updateTurretMatrix = VehicleGunRotator._VehicleGunRotator__updateTurretMatrix
+
+
 @overrideIn(VehicleGunRotator)
 def __updateTurretMatrix(self, yaw, time):
+    if not g_oneTickCache.isDuringVgrTick or not g_oneTickCache.shouldBoostTickRate:
+        return old_VGR_updateTurretMatrix(self, yaw, time)
+
     if not self._VehicleGunRotator__isStarted:
         return
     else:
@@ -314,6 +320,9 @@ old_VGR_updateGunMatrix = VehicleGunRotator._VehicleGunRotator__updateGunMatrix
 
 @overrideIn(VehicleGunRotator)
 def __updateGunMatrix(self, pitch, time):
+    if not g_oneTickCache.isDuringVgrTick or not g_oneTickCache.shouldBoostTickRate:
+        return old_VGR_updateGunMatrix(self, pitch, time)
+
     if not self._VehicleGunRotator__isStarted:
         return
     else:
@@ -351,6 +360,9 @@ old_VGR_syncWithServerTurretYaw = VehicleGunRotator._VehicleGunRotator__syncWith
 
 @overrideIn(VehicleGunRotator)
 def __syncWithServerTurretYaw(self, estimatedTurretYaw):
+    if not g_oneTickCache.isDuringVgrTick or not g_oneTickCache.shouldBoostTickRate:
+        return old_VGR_syncWithServerTurretYaw(self, estimatedTurretYaw)
+
     time = BigWorld.time()
     if (time - self._mod_last_syncWithServerTurretYaw_time) < constants.SERVER_TICK_LENGTH:
         return estimatedTurretYaw
@@ -358,24 +370,6 @@ def __syncWithServerTurretYaw(self, estimatedTurretYaw):
     self._mod_last_syncWithServerTurretYaw_time = time
 
     return old_VGR_syncWithServerTurretYaw(self, estimatedTurretYaw)
-
-
-# performance note
-#
-# without g_oneTickCache:
-# * VGR AT: cumulative time is 19.8 us (2 calls)
-# * VGR AE: cumulative time is 32.5 us (3 calls)
-#
-# with g_oneTickCache:
-# * on VGR AT and AE tick: cumulative time is 7.1 us (loading call) + 0.4 us (2 calls) = 7.5 us
-#
-# so this saves (12.3 us; 25 us) on average
-@overrideIn(VehicleGunRotator)
-def getAvatarOwnVehicleStabilisedMatrix(self):
-    if not g_oneTickCache.isDuringVgrTick:
-        return old_VGR_getAvatarOwnVehicleStabilisedMatrix(self)
-
-    return g_oneTickCache.gunRotator_avatarOwnVehicleStabilisedMatrix
 
 
 old_VGR_updateGunMarker = VehicleGunRotator._VehicleGunRotator__updateGunMarker
@@ -524,3 +518,21 @@ def __updateGunMarker(self, forceRelaxTime=None):
     # remember to update dual accuracy as well
     if vehicle and vehicle.typeDescriptor and vehicle.typeDescriptor.hasDualAccuracy:
         gunMarker.setPosition(position, GUN_MARKER_TYPE.DUAL_ACC)
+
+
+# performance note
+#
+# without g_oneTickCache:
+# * VGR AT: cumulative time is 19.8 us (2 calls)
+# * VGR AE: cumulative time is 32.5 us (3 calls)
+#
+# with g_oneTickCache:
+# * on VGR AT and AE tick: cumulative time is 7.1 us (loading call) + 0.4 us (2 calls) = 7.5 us
+#
+# so this saves (12.3 us; 25 us) on average
+@overrideIn(VehicleGunRotator)
+def getAvatarOwnVehicleStabilisedMatrix(self):
+    if not g_oneTickCache.isDuringVgrTick:
+        return old_VGR_getAvatarOwnVehicleStabilisedMatrix(self)
+
+    return g_oneTickCache.gunRotator_avatarOwnVehicleStabilisedMatrix

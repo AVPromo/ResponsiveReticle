@@ -9,8 +9,7 @@ from items.vehicles import VehicleDescriptor
 class ShouldBoostTickRateHelper(object):
 
     def __init__(self):
-        self.lastCheckedPlayerVehicleDescriptor = None  # type: Optional[VehicleDescriptor]
-        self.lastIsPlayerVehicleValid = False
+        pass
 
     # this method is overall very fast (normally around 2 us)
     # but measurement (without cache) shows for first call around 10 us even through nothing of its calculation changed
@@ -28,23 +27,10 @@ class ShouldBoostTickRateHelper(object):
         if vehicleDescriptor is None:
             return False
 
-        # performance note: avoid iterating over tags list for a little faster result
-        if self.lastCheckedPlayerVehicleDescriptor == vehicleDescriptor:
-            return self.lastIsPlayerVehicleValid
-
-        self.lastCheckedPlayerVehicleDescriptor = vehicleDescriptor
-
-        # we don't want to change SPGs gun tick rate because it breaks top-down view reticle dots
-        # and this mod is not useful for SPGs, so it's not an issue
-        if 'SPG' in vehicleDescriptor.type.tags:
-            self.lastIsPlayerVehicleValid = False
-            return False
-
         # we don't want to change gun tick rate for vehicles that have static gun yaw (for example Strv 103B)
         # because it already has hull-controlled reticle movement
         # and because reticle blinks horribly due to 0/0 gun angles
-        self.lastIsPlayerVehicleValid = vehicleDescriptor.gun.staticTurretYaw != 0
-        return self.lastIsPlayerVehicleValid
+        return vehicleDescriptor.gun.staticTurretYaw != 0
 
 
 g_shouldBoostTickRateHelper = ShouldBoostTickRateHelper()
