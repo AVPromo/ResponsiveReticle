@@ -8,8 +8,8 @@ to 1 ms**</ins>.
 ![Mod preview](images/preview.png)
 
 ## Notes
-* disabled for SPG because ... it's complicated
 * disabled in replays
+* has some smaller impact on FPS due to more frequent reticle position updates (but it's still optimised to maximum)
 
 ## Feedback
 You can:
